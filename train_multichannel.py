@@ -1,4 +1,4 @@
-# train_natural_grouping.py
+# train_multichannel.py
 import os
 import time
 import json
@@ -12,9 +12,9 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from datatable import fread
 
-from feature_arrangers.natural_grouping_arranger import NaturalGroupingArranger
+from feature_arrangers.multichannel_arranger import MultichannelArranger
+from models.multi_channel_cnn import MultichannelCNN
 from logger import ExperimentLogger
-from models.cnn_model import CNN
 
 def load_data(train_file, val_file, test_file):
     """
@@ -149,6 +149,11 @@ def train_model(model, data_loaders, optimizer, criterion, device, num_epochs, l
             # Forward pass
             outputs = model(inputs)
             loss = criterion(outputs, targets)
+            
+            # Add L2 regularization if applicable
+            if hasattr(model, 'get_l2_regularization_loss'):
+                l2_loss = model.get_l2_regularization_loss()
+                loss += l2_loss
             
             # Backward pass and optimize
             loss.backward()
@@ -292,7 +297,7 @@ def evaluate_model(model, data_loader, device, logger, dataset_name=""):
     return metrics, all_targets, all_preds, all_probs
 
 def main():
-    parser = argparse.ArgumentParser(description='Train CNN with natural grouping feature arrangement')
+    parser = argparse.ArgumentParser(description='Train multi-channel CNN for phosphorylation site prediction')
     parser.add_argument('--train_file', type=str, default='split_data/train_data.csv', help='Path to training data')
     parser.add_argument('--val_file', type=str, default='split_data/val_data.csv', help='Path to validation data')
     parser.add_argument('--test_file', type=str, default='split_data/test_data.csv', help='Path to test data')
@@ -302,7 +307,7 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=1e-5, help='Weight decay')
     parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate')
     parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
-    parser.add_argument('--experiment_name', type=str, default='natural_grouping_cnn', help='Experiment name')
+    parser.add_argument('--experiment_name', type=str, default='multichannel_cnn', help='Experiment name')
     
     args = parser.parse_args()
     
@@ -326,9 +331,9 @@ def main():
     norm_feature_dict = normalize_features(feature_dict)
     
     # Create feature arranger
-    logger.log_message("Creating feature arranger...")
+    logger.log_message("Creating multi-channel feature arranger...")
     feature_columns = feature_dict['X_train'].columns.tolist()
-    arranger = NaturalGroupingArranger(feature_columns)
+    arranger = MultichannelArranger(feature_columns)
     
     # Prepare data
     logger.log_message("Preparing data...")
@@ -339,15 +344,19 @@ def main():
     logger.log_message(f"Using device: {device}")
     
     # Get necessary model parameters from input shape
-    n_samples, n_channels, height, width = input_shape
+    n_samples, n_channels, max_height, max_width = input_shape
     
     # Create model
-    logger.log_message("Creating model...")
-    model = CNN(
+    logger.log_message("Creating multi-channel CNN model...")
+    model = MultichannelCNN(
         input_channels=n_channels,
-        input_height=height,
-        input_width=width,
-        dropout_rate=args.dropout
+        input_height=max_height,
+        input_width=max_width,
+        filters_per_channel=[16, 32],
+        shared_filters=[64, 128],
+        dense_units=[256, 128, 64],
+        dropout_rate=args.dropout,
+        l2_reg=args.weight_decay
     ).to(device)
     
     # Log model summary
@@ -355,7 +364,7 @@ def main():
     
     # Setup loss function and optimizer
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     
     # Train model
     logger.log_message("Starting training...")

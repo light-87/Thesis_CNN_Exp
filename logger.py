@@ -140,7 +140,7 @@ class ExperimentLogger:
         self.logger.info(f"  Precision: {metrics['precision']:.4f}")
         self.logger.info(f"  Recall: {metrics['recall']:.4f}")
         self.logger.info(f"  F1 Score: {metrics['f1']:.4f}")
-        self.logger.info(f"  ROC AUC: {metrics['auc']:.4f}")
+        self.logger.info(f"  ROC AUC: {metrics['roc_auc']:.4f}")
         
         # Save metrics to JSON file
         metrics_file = os.path.join(self.experiment_dir, f'{dataset}_metrics.json')
